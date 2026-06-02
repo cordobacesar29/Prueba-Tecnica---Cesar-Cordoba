@@ -223,6 +223,7 @@ class EmbeddingManager:
         self.use_openai = use_openai
         self.embeddings = {}
         self.documents = []
+        self.vocab_index = {}
         
         if use_openai:
             try:
@@ -282,7 +283,7 @@ class EmbeddingManager:
             vocabulary.update(words)
         
         vocab_list = sorted(list(vocabulary))
-        vocab_index = {word: idx for idx, word in enumerate(vocab_list)}
+        self.vocab_index = {word: idx for idx, word in enumerate(vocab_list)}
         
         # Generate TF vectors
         for idx, doc in enumerate(documents):
@@ -290,8 +291,8 @@ class EmbeddingManager:
             words = doc["content"].lower().split()
             
             for word in words:
-                if word in vocab_index:
-                    vector[vocab_index[word]] += 1
+                if word in self.vocab_index:
+                    vector[self.vocab_index[word]] += 1
             
             # Normalize
             norm = np.linalg.norm(vector)
@@ -301,6 +302,22 @@ class EmbeddingManager:
             embeddings[idx] = vector
         
         return embeddings
+
+    def _fallback_query_embedding(self, query: str) -> np.ndarray:
+        """Generate a query vector in the same TF space as fallback document embeddings."""
+        if not self.vocab_index:
+            return self._simple_embedding(query)
+
+        vector = np.zeros(len(self.vocab_index))
+        for word in query.lower().split():
+            if word in self.vocab_index:
+                vector[self.vocab_index[word]] += 1
+
+        norm = np.linalg.norm(vector)
+        if norm > 0:
+            vector = vector / norm
+
+        return vector
     
     def _simple_embedding(self, text: str) -> np.ndarray:
         """Create a simple embedding for text."""
@@ -345,7 +362,7 @@ class EmbeddingManager:
                 logger.error(f"Error generating query embedding: {str(e)}")
                 query_embedding = self._simple_embedding(query)
         else:
-            query_embedding = self._simple_embedding(query)
+            query_embedding = self._fallback_query_embedding(query)
         
         # Calculate similarities
         similarities = []

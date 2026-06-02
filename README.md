@@ -1,480 +1,182 @@
-# MineCatalog RAG - Sistema Automatizado de Soporte Técnico
+# MineCatalog RAG Support Assistant
 
-## 📋 Descripción General
+Sistema RAG para soporte técnico de MineCatalog. El usuario pregunta desde una UI web o desde un webhook n8n; n8n consulta el backend FastAPI, recupera contexto de `docs/` y usa OpenAI para generar una respuesta controlada por documentación.
 
-Sistema de **Retrieval-Augmented Generation (RAG)** automatizado que actúa como asistente de soporte técnico para **MineCatalog**. Integra procesamiento de documentos con Python, búsqueda semántica y generación de respuestas mediante OpenAI, orquestado a través de n8n.
+## Arquitectura rápida
 
-**Características principales:**
-- ✅ Ingesta automática de múltiples formatos (PDF, TXT, MD, JSON)
-- ✅ Búsqueda semántica con embeddings (OpenAI o fallback local)
-- ✅ Restricción absoluta de alucinación en respuestas
-- ✅ API REST para integración con n8n
-- ✅ Workflow n8n exportable y reutilizable
-- ✅ Manejo robusto de errores y timeouts
-- ✅ Respuestas contextualizadas basadas en documentación oficial
-
----
-
-## 🏗️ Arquitectura del Sistema
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      n8n Workflow                           │
-│  [Webhook] → [Search API] → [OpenAI] → [Response]         │
-└──────────────────┬──────────────────────────────────────────┘
-                   │
-         HTTP POST /search
-                   │
-┌──────────────────▼──────────────────────────────────────────┐
-│              FastAPI Python Server (main.py)               │
-│  ├─ /health         → Estado del sistema                   │
-│  ├─ /search         → Búsqueda semántica                   │
-│  └─ /context        → Obtener contexto para LLM           │
-└──────────────────┬──────────────────────────────────────────┘
-                   │
-         RAG Pipeline (rag_pipeline.py)
-                   │
-        ┌──────────┴──────────┐
-        │                     │
-┌───────▼─────────┐  ┌────────▼────────┐
-│ Document        │  │ Embedding       │
-│ Processor       │  │ Manager         │
-│ ├─ PDF loader   │  │ ├─ OpenAI API   │
-│ ├─ TXT loader   │  │ ├─ Fallback TF   │
-│ ├─ MD loader    │  │ └─ Search       │
-│ ├─ JSON loader  │  │    (Cosine Sim) │
-│ ├─ Cleaning     │  └─────────────────┘
-│ └─ Chunking     │
-└─────────────────┘
-
-         ▲
-         │
-    /docs folder
-    (4 documentation files)
+```text
+Usuario/UI
+  -> n8n Webhook GET /webhook-test/minecatalog-support?question=...
+  -> Backend FastAPI GET /search?question=...
+  -> RAG local sobre docs/
+  -> OpenAI node en n8n
+  -> Respuesta al usuario
 ```
 
----
+## Requisitos
 
-## 🚀 Instalación y Configuración
+- Python 3.9+.
+- n8n local o Docker.
+- OpenAI API key configurada en n8n para el nodo `Generate Answer`.
+- Archivos de documentación en `docs/`.
 
-### Requisitos Previos
+## 1. Levantar el backend
 
-- **Python 3.9+**
-- **pip** (gestor de paquetes de Python)
-- **n8n** (v1.0+) - [Descargar](https://n8n.io/)
-- **OpenAI API Key** - [Obtener en OpenAI](https://platform.openai.com/api-keys)
-- **Git** (opcional, para clonar el repositorio)
-
-### Paso 1: Clonar el Repositorio
-
-```bash
-git clone https://github.com/tu-usuario/minecatalog-rag.git
-cd minecatalog-rag
-```
-
-### Paso 2: Crear Archivo `.env`
-
-Copia el archivo `.env.example` y configura tus variables:
-
-```bash
-cp .env.example .env
-```
-
-Edita `.env` con tus valores:
-
-```env
-# OpenAI Configuration
-OPENAI_API_KEY=sk-your-actual-key-here
-OPENAI_MODEL=gpt-4-turbo-preview
-OPENAI_EMBEDDING_MODEL=text-embedding-3-small
-
-# API Server
-API_HOST=0.0.0.0
-API_PORT=8000
-API_DEBUG=false
-
-# Docs Configuration
-DOCS_DIR_PATH=./docs
-VECTOR_DB_PATH=./vector_store/embeddings.json
-
-# n8n Configuration
-N8N_WEBHOOK_URL=http://localhost:5678/webhook-test/minecatalog-rag
-N8N_API_URL=http://localhost:5678
-
-# RAG Parameters
-CHUNK_SIZE=500
-CHUNK_OVERLAP=50
-TOP_K_RESULTS=3
-SIMILARITY_THRESHOLD=0.5
-
-# Support Contact
-SUPPORT_EMAIL=soporte.minecatalog@empresa.com
-```
-
-### Paso 3: Instalar Dependencias Python
-
-```bash
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-```
-
-### Paso 4: Preparar Documentación
-
-Coloca los 4 archivos de documentación en la carpeta `docs/`:
-
-```
-docs/
-├── Documentación 1.pdf
-├── Documentación 2.txt
-├── Documentación 3.md
-└── Documentación 4.json
-```
-
----
-
-## 🎯 Ejecución Local
-
-### Opción A: Ejecución Manual (Desarrollo)
-
-#### Terminal 1: Iniciar API Python
-
-```bash
+copy .env.example .env
 python main.py
 ```
 
-Salida esperada:
-```
-INFO:     Uvicorn running on http://0.0.0.0:8000
-INFO:     Starting MineCatalog RAG API...
-INFO:     Initializing RAG pipeline...
-INFO:     Loaded 156 document chunks
-INFO:     RAG pipeline initialized successfully
+Verificación:
+
+```powershell
+curl http://localhost:8000/health
 ```
 
-**Endpoints disponibles:**
-- `GET http://localhost:8000/health` - Verificar estado
-- `POST http://localhost:8000/search` - Búsqueda semántica
-- `POST http://localhost:8000/context` - Obtener contexto
+Swagger:
 
-#### Verificar que funciona:
-
-```bash
-curl -X GET http://localhost:8000/health
+```text
+http://localhost:8000/docs
 ```
 
-Respuesta esperada:
-```json
-{
-  "status": "healthy",
-  "rag_initialized": true
-}
+UI local servida por FastAPI:
+
+```text
+http://localhost:8000/ui
 ```
 
----
+Proxy backend hacia n8n, usado por la UI para evitar CORS:
 
-## 📚 Uso de la API
-
-### 1. Búsqueda Semántica
-
-**Request:**
-```bash
-curl -X POST http://localhost:8000/search \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "¿No se guardan los cambios de un material?",
-    "top_k": 3,
-    "threshold": 0.5
-  }'
+```text
+POST http://localhost:8000/ask
 ```
 
-**Response:**
-```json
-{
-  "success": true,
-  "results": [
-    {
-      "rank": 1,
-      "content": "Causa posible: Errores de validación de datos...",
-      "similarity_score": 0.87
-    },
-    {
-      "rank": 2,
-      "content": "Solución: Revisar los campos obligatorios...",
-      "similarity_score": 0.82
-    }
-  ],
-  "total_results": 2,
-  "query": "¿No se guardan los cambios de un material?"
-}
+## 2. Probar el backend sin n8n
+
+```powershell
+curl -X POST http://localhost:8000/search `
+  -H "Content-Type: application/json" `
+  -d "{\"query\":\"¿No se guardan los cambios de un material?\",\"top_k\":3,\"threshold\":0.5}"
 ```
 
-### 2. Obtener Contexto para LLM
+Respuesta esperada: `success: true`, lista `results` y `similarity_score` por fragmento.
 
-**Request:**
-```bash
-curl -X POST http://localhost:8000/context \
-  -H "Content-Type: application/json" \
-  -d '{"query": "Error de conexión a base de datos"}'
+## 3. Levantar n8n
+
+Opción rápida con `npx`:
+
+```powershell
+npx n8n
 ```
 
-**Response:**
-```json
-{
-  "success": true,
-  "query": "Error de conexión a base de datos",
-  "context": "- Servidor de base de datos apagado\n- Validar host, puerto, nombre de base de datos...",
-  "num_results": 3,
-  "threshold_used": 0.5
-}
+Opción Docker:
+
+```powershell
+docker run -it --rm --name n8n -p 5678:5678 n8nio/n8n
 ```
 
----
+Abrir:
 
-## 🔄 Integración con n8n
-
-### Paso 1: Importar Workflow
-
-1. Abre n8n en `http://localhost:5678`
-2. Ve a **Workflows** → **Import from JSON**
-3. Copia el contenido de `n8n_workflow.json`
-4. Pega en el dialog de importación
-5. Haz clic en **Import**
-
-### Paso 2: Configurar Credenciales OpenAI
-
-1. En el workflow importado, busca el nodo **"Generate Answer"**
-2. Configura la credencial de OpenAI con tu API Key
-3. Asegúrate que el modelo sea `gpt-4-turbo-preview`
-
-### Paso 3: Probar el Workflow
-
-**Enviar request a n8n:**
-```bash
-curl -X POST http://localhost:5678/webhook-test/minecatalog-support \
-  -H "Content-Type: application/json" \
-  -d '{
-    "question": "¿Cuáles son las causas posibles de un error de autenticación?"
-  }'
+```text
+http://localhost:5678
 ```
 
-**Response esperada:**
-```json
-{
-  "success": true,
-  "question": "¿Cuáles son las causas posibles de un error de autenticación?",
-  "answer": "Según la documentación de MineCatalog, las causas posibles de error de autenticación ERR-AUTH-001 son...",
-  "context_used": 3,
-  "timestamp": "2024-05-29T20:34:27Z"
-}
+## 4. Conectar la automatización
+
+1. En n8n, importar `n8n_workflow.json`.
+2. Configurar credenciales OpenAI en el nodo `Generate Answer`.
+3. Revisar la URL del nodo `Search Documentation`:
+  - n8n local: `http://127.0.0.1:8000/search?question=...`.
+  - n8n en Docker: usar `http://host.docker.internal:8000/search?question=...`.
+4. Ejecutar el workflow en modo test.
+5. Probar el webhook:
+
+```powershell
+curl "http://localhost:5678/webhook-test/minecatalog-support?question=No%20se%20guardan%20los%20cambios%20de%20un%20material"
 ```
 
----
+Cuando el workflow esté activo en producción, cambiar `webhook-test` por `webhook`:
 
-## 🛡️ Reglas de Alucinación y Restricciones
-
-El sistema está configurado con las siguientes reglas estrictas:
-
-### ✅ Respuesta Correcta (Documentada)
-
-**Pregunta:** "¿No se guardan los cambios de un material?"
-
-**Respuesta:** 
-> "Basándome en la sección 4.3 de la documentación, si los cambios de un material no se guardan, verifique: 
-> 1. Que todos los campos obligatorios estén completados
-> 2. Permisos del usuario
-> 3. Espacio en base de datos"
-
-### ❌ Respuesta Bloqueada (No Documentada)
-
-**Pregunta:** "¿Qué significa error 502?"
-
-**Respuesta (Forzada):**
-> "Lo siento, la información solicitada no se encuentra en la documentación interna de MineCatalog. Por favor, contacte a soporte técnico en soporte.minecatalog@empresa.com"
-
----
-
-## 📊 Ejemplos de Validación
-
-### Test Case 1: Consulta Documentada
-
-```python
-# Query: "Credenciales incorrectas"
-# Esperado: Respuesta con detalles del error ERR-AUTH-001
-# Resultado: ✅ PASS
+```text
+http://localhost:5678/webhook/minecatalog-support?question=...
 ```
 
-### Test Case 2: Consulta No Documentada
+## URLs importantes
 
-```python
-# Query: "Error 502 Bad Gateway"
-# Esperado: Derivación a soporte
-# Resultado: ✅ PASS
+| Componente | URL local | Uso |
+|---|---|---|
+| Backend health | `http://localhost:8000/health` | Estado del RAG |
+| Backend Swagger | `http://localhost:8000/docs` | Probar endpoints |
+| UI web | `http://localhost:8000/ui` | Demo amigable |
+| Backend ask proxy | `http://localhost:8000/ask` | UI -> FastAPI -> n8n |
+| Backend search | `http://127.0.0.1:8000/search?question=...` | Llamado desde n8n |
+| n8n editor | `http://localhost:5678` | Editar workflow |
+| n8n test webhook | `http://localhost:5678/webhook-test/minecatalog-support?question=...` | Pruebas |
+| n8n prod webhook | `http://localhost:5678/webhook/minecatalog-support?question=...` | Workflow activo |
+
+## Interfaz web
+
+Se implementó una UI estática en `frontend/index.html`, servida desde `http://localhost:8000/ui`.
+
+Tres opciones de evolución:
+
+1. **Consola web liviana:** la versión actual; ideal para demo y prueba técnica porque no requiere Node ni build.
+2. **Widget embebible:** botón flotante dentro de MineCatalog para soporte contextual.
+3. **Panel QA interno:** historial de preguntas, contexto recuperado, scores, trazas n8n y errores OpenAI para soporte/operaciones.
+
+## Guía del flujo completo
+
+1. El usuario abre `http://localhost:8000/ui`.
+2. La UI envía `POST /ask` al backend FastAPI.
+3. FastAPI llama server-side al webhook n8n configurado en `N8N_WEBHOOK_URL`.
+4. n8n recibe la pregunta en el nodo `Webhook`.
+5. El nodo `Search Documentation` llama al backend: `GET /search?question=...`.
+6. FastAPI valida la query con Pydantic y ejecuta el pipeline RAG sobre `docs/`.
+7. El backend devuelve fragmentos relevantes con score de similitud.
+8. n8n inyecta esos fragmentos como contexto en el nodo OpenAI.
+9. OpenAI responde únicamente con información del contexto; si no hay evidencia suficiente, responde con el fallback de soporte.
+10. n8n devuelve un JSON final a FastAPI y FastAPI lo devuelve a la UI.
+
+La conexión clave es: n8n orquesta la conversación y el backend solo recupera evidencia documental. Esa separación evita acoplar el LLM al backend y permite ajustar prompts/modelos desde n8n sin tocar Python.
+
+## Manejo de errores OpenAI en n8n
+
+Basado en la guía oficial de errores de OpenAI: https://developers.openai.com/api/docs/guides/error-codes
+
+Recomendación práctica para este workflow:
+
+- `401/403`: validar credencial OpenAI en n8n y permisos del proyecto.
+- `429`: agregar retry con backoff en n8n y mostrar mensaje de saturación temporal.
+- `500/503`: reintentar una vez y devolver error controlado si persiste.
+- `timeout`: configurar timeout explícito en OpenAI y devolver fallback operativo.
+- Errores de WebSocket/realtime: no aplican a este flujo HTTP, pero conviene documentarlos si se migra a streaming.
+
+Mensaje seguro para errores externos:
+
+```text
+No se pudo generar la respuesta en este momento. Intente nuevamente en unos minutos o contacte a soporte técnico.
 ```
 
-### Test Case 3: Input Vacío
+## Troubleshooting
 
-```python
-# Query: ""
-# Esperado: HTTP 400 Bad Request
-# Resultado: ✅ PASS
+- `RAG pipeline not initialized`: verificar que `docs/` exista y tenga archivos `.pdf`, `.txt`, `.md` o `.json`.
+- `shapes (...) not aligned`: reiniciar el backend después del último cambio; el fallback local ahora usa el mismo vector TF para documentos y consulta.
+- `Connection refused` desde n8n: confirmar que `python main.py` sigue corriendo y revisar `127.0.0.1` vs `host.docker.internal`.
+- `422 Unprocessable Entity` en `Search Documentation`: el backend no recibió `question`; probar directo `curl "http://localhost:8000/search?question=No%20se%20guardan%20los%20cambios"`.
+- `Webhook not found`: en modo edición abrir el workflow y presionar **Execute workflow** antes de llamar `/webhook-test/...`; con workflow activo usar `/webhook/...`.
+- CORS en la UI: usar `/ask`; no llamar n8n directamente desde el navegador salvo que n8n tenga CORS configurado.
+- Respuestas sin contexto: bajar temporalmente `threshold` o revisar la calidad de los documentos en `docs/`.
+
+## Archivos principales
+
+```text
+main.py               FastAPI, Swagger, /search, /health y /ui
+rag_pipeline.py       Carga documentos, chunking y búsqueda semántica
+prompt_engineering.py Prompts y fallback anti-alucinación
+n8n_workflow.json     Automatización n8n importable
+frontend/index.html   UI web estática
+docs/                 Base documental del RAG
 ```
-
-### Test Case 4: Timeout de OpenAI
-
-```python
-# Escenario: API de OpenAI cae
-# Esperado: Error controlado, retry automático
-# Resultado: ✅ PASS
-```
-
----
-
-## 🔧 Solución de Problemas
-
-### Problema: "RAG pipeline not initialized"
-
-**Solución:**
-1. Verifica que la carpeta `docs/` contiene los archivos de documentación
-2. Revisa los logs de Python en busca de errores de parseo
-3. Reinicia el servidor API
-
-### Problema: "OpenAI API Error: Invalid API Key"
-
-**Solución:**
-1. Verifica que `OPENAI_API_KEY` en `.env` es correcto
-2. Asegúrate que la API Key tiene permisos suficientes
-3. Confirma que no está en lista negra
-
-### Problema: "Connection refused to localhost:8000"
-
-**Solución:**
-1. Verifica que el servidor Python está corriendo: `lsof -i :8000`
-2. Comprueba que el puerto 8000 no está en uso por otro proceso
-3. Reinicia la API
-
-### Problema: "n8n Webhook not found"
-
-**Solución:**
-1. Asegúrate que n8n está corriendo en `http://localhost:5678`
-2. Verifica que el workflow está activo (toggle encendido)
-3. Comprueba la URL del webhook en la configuración
-
----
-
-## 📈 Métricas y Monitoring
-
-### Monitoreo de Búsquedas
-
-Verifica el archivo de logs para analizar:
-- Tiempo de latencia en búsquedas
-- Score de similitud promedio
-- Queries que derivaron a soporte
-
-```bash
-tail -f minecatalog_rag.log
-```
-
-### Health Check
-
-```bash
-watch -n 5 'curl -s http://localhost:8000/health | jq .'
-```
-
----
-
-## 🚀 Deployment en Producción
-
-### Docker (Recomendado)
-
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY . .
-
-CMD ["python", "main.py"]
-```
-
-**Build:**
-```bash
-docker build -t minecatalog-rag:latest .
-```
-
-**Run:**
-```bash
-docker run -d \
-  -e OPENAI_API_KEY=sk-xxx \
-  -e DOCS_DIR_PATH=/app/docs \
-  -p 8000:8000 \
-  minecatalog-rag:latest
-```
-
----
-
-## 📝 Estructura de Archivos
-
-```
-minecatalog-rag/
-├── main.py                    # FastAPI application
-├── rag_pipeline.py           # RAG processing logic
-├── prompt_engineering.py     # System prompts & LLM config
-├── n8n_workflow.json        # n8n workflow definition
-├── requirements.txt          # Python dependencies
-├── .env.example             # Environment variables template
-├── README.md                # This file
-└── docs/                    # Documentation files
-    ├── Documentación 1.pdf
-    ├── Documentación 2.txt
-    ├── Documentación 3.md
-    └── Documentación 4.json
-```
-
----
-
-## 🎓 Conceptos Clave
-
-### RAG (Retrieval-Augmented Generation)
-
-Combina recuperación de documentos relevantes con generación de texto:
-1. **Retrieval:** Busca contexto relevante de la base de conocimiento
-2. **Augmented:** Inyecta contexto en el prompt del LLM
-3. **Generation:** LLM genera respuesta basada en contexto
-
-### Chunking Inteligente
-
-Divide documentos en fragmentos manejables mientras preserva contexto:
-- `CHUNK_SIZE=500` palabras por fragmento
-- `CHUNK_OVERLAP=50` palabras de solapamiento
-- Preserva coherencia semántica
-
-### Embeddings y Búsqueda Semántica
-
-- **Embeddings:** Representación vectorial de texto
-- **Cosine Similarity:** Mide proximidad entre vectores
-- **Top-K Retrieval:** Retorna los K fragmentos más similares
-
----
-
-## 📞 Soporte y Contacto
-
-Para problemas con la implementación:
-- Abre un issue en GitHub
-- Contacta al equipo de soporte técnico
-- Revisa la documentación de MineCatalog
-
-**Email de Soporte:** soporte.minecatalog@empresa.com
-
----
-
-## 📄 Licencia
-
-Este proyecto es parte de la prueba técnica de Unilink. Todos los derechos reservados.
-
----
-
-**Última actualización:** Mayo 2026
-**Versión:** 1.0.0
-**Desarrollador:** Ingeniero de ML Senior

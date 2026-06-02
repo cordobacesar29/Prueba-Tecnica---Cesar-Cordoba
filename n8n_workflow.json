@@ -7,7 +7,7 @@
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "171790f0-9805-42b6-b41d-31ffd34db347",
+      "id": "d1c76eae-eca5-4a7a-9582-18170afb329c",
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
@@ -47,9 +47,11 @@
             }
           ]
         },
-        "options": {}
+        "options": {
+          "timeout": 15000
+        }
       },
-      "id": "7f85a68c-3d41-4390-8b07-78b7e54c71d7",
+      "id": "044096b0-71e7-4dc6-a76d-ec6ff060f9c3",
       "name": "Search Documentation",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 3,
@@ -65,14 +67,21 @@
         "prompt": {
           "messages": [
             {
-              "content": "=Eres un asistente técnico especializado en soporte para MineCatalog, software de catálogo de materiales.  Tu rol es responder preguntas de forma precisa y útil basándote ÚNICAMENTE en la documentación oficial proporcionada.   REGLA CRÍTICA - RESTRICCIÓN ABSOLUTA DE ALUCINACIÓN: Si la información solicitada por el usuario NO está explícitamente mencionada en el contexto de documentación proporcionado a continuación, debes responder exactamente con:  \"Lo siento, la información solicitada no se encuentra en la documentación interna de MineCatalog. Por favor, contacte a soporte técnico en soporte.minecatalog@empresa.com\"  ESTÁ COMPLETAMENTE PROHIBIDO: - Inventar soluciones o funcionalidades - Asumir características no documentadas - Proporcionar información sobre otros sistemas - Dar consejos no basados en la documentación oficial  DOCUMENTACIÓN DE REFERENCIA: {context}  DIRECTRICES DE RESPUESTA: 1. Responde siempre en español, usando un tono profesional y amable 2. Si la respuesta está en la documentación, proporciona la solución paso a paso 3. Incluye códigos de error (ej: ERR-AUTH-001) si son relevantes 4. Proporciona causas posibles y soluciones específicas 5. Si la pregunta es ambigua, pide clarificación  EJEMPLOS DE VALIDACIÓN:  Pregunta: \"¿Qué significa error 502?\" Respuesta CORRECTA: \"Lo siento, la información solicitada no se encuentra en la documentación interna de MineCatalog. Por favor, contacte a soporte técnico en soporte.minecatalog@empresa.com\" (Razón: El error 502 no está documentado en los archivos proporcionados)  Pregunta: \"¿Cuáles son las causas posibles del error de credenciales?\" Respuesta CORRECTA: [Proporcionar la sección ERR-AUTH-001 de la documentación con causas y soluciones]  Pregunta: \"¿Cómo resuelvo un error de conexión a la base de datos?\" Respuesta CORRECTA: [Proporcionar pasos de solución del error de base de datos con verificaciones específicas]  IMPORTANTE: Antes de responder, verifica que la información esté en el contexto proporcionado. Cuando dudes, es mejor admitir limitaciones que proporcionar información incorrecta."
+              "role": "system",
+              "content": "=Eres un asistente técnico especializado en soporte para MineCatalog. Responde siempre en español y usa únicamente la documentación recuperada. Si el contexto está vacío o no contiene la respuesta, responde exactamente: \"Lo siento, la información solicitada no se encuentra en la documentación interna de MineCatalog. Por favor, contacte a soporte técnico en soporte.minecatalog@empresa.com\".\n\nDOCUMENTACIÓN RECUPERADA:\n{{$json.results.map((item) => `- ${item.content}`).join('\\n')}}"
+            },
+            {
+              "content": "={{$node[\"Webhook\"].json.query?.question || $node[\"Webhook\"].json.body?.question || $node[\"Webhook\"].json.question || \"\"}}"
             }
           ]
         },
-        "options": {},
+        "options": {
+          "maxTokens": 700,
+          "temperature": 0.2
+        },
         "requestOptions": {}
       },
-      "id": "62135de9-5af5-4e35-a302-5b2c9ee2de3d",
+      "id": "b7076aab-ece6-4254-8289-a8e4ad09995c",
       "name": "Generate Answer",
       "type": "n8n-nodes-base.openAi",
       "typeVersion": 1,
@@ -89,28 +98,17 @@
     },
     {
       "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, question: $node[\"Webhook\"].json.query?.question || $node[\"Webhook\"].json.body?.question || $node[\"Webhook\"].json.question || \"\", answer: $json.message?.content || $json.text || $json.response || $json, source: \"n8n\", backendUrl: \"http://127.0.0.1:8000/search\", timestamp: new Date().toISOString() } }}",
         "options": {}
       },
-      "id": "54314586-b789-4597-869a-e4f46e5f28e3",
+      "id": "4d70b437-aef2-4870-9806-56979fb982e8",
       "name": "Response",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
       "position": [
         752,
         0
-      ]
-    },
-    {
-      "parameters": {
-        "options": {}
-      },
-      "id": "3709ed51-6b25-4ad3-97d3-7275765bab48",
-      "name": "No Results Response",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1,
-      "position": [
-        752,
-        208
       ]
     }
   ],
@@ -155,11 +153,10 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "8397f34a-66b7-40ca-a6a5-3431eceb69b8",
+  "versionId": "d60ba10d-6063-44d9-9807-e9a2af44db25",
   "meta": {
-    "templateCredsSetupCompleted": true,
     "instanceId": "f21acee94bbb1b49459c63ca4d52da8eecb4aa02d8b20de57dffb374f0f68fb0"
   },
-  "id": "5tROen7UoRVo9CdO",
+  "id": "fkOAUE3y4XxfGVh9",
   "tags": []
 }

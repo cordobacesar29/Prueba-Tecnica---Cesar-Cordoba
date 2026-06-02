@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MineCatalog Support Assistant</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f7fb;
+        --card: #ffffff;
+        --text: #111827;
+        --muted: #6b7280;
+        --primary: #2563eb;
+        --primary-dark: #1d4ed8;
+        --border: #e5e7eb;
+        --success: #047857;
+        --danger: #b91c1c;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at top left, rgba(37, 99, 235, 0.18), transparent 32rem),
+          var(--bg);
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      main {
+        width: min(1120px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 48px 0;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: 1.05fr 0.95fr;
+        gap: 24px;
+        align-items: stretch;
+      }
+
+      .panel {
+        border: 1px solid var(--border);
+        border-radius: 28px;
+        background: rgba(255, 255, 255, 0.9);
+        box-shadow: 0 24px 80px rgba(15, 23, 42, 0.08);
+        backdrop-filter: blur(16px);
+      }
+
+      .intro {
+        padding: 36px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 16px;
+        color: var(--primary);
+        font-size: 0.85rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(2.3rem, 5vw, 4.6rem);
+        line-height: 0.96;
+        letter-spacing: -0.06em;
+      }
+
+      .lead {
+        max-width: 58ch;
+        margin: 22px 0 0;
+        color: var(--muted);
+        font-size: 1.06rem;
+        line-height: 1.7;
+      }
+
+      .flow {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+        margin-top: 28px;
+      }
+
+      .step {
+        min-height: 92px;
+        padding: 14px;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: #f9fafb;
+        font-size: 0.88rem;
+      }
+
+      .step strong {
+        display: block;
+        margin-bottom: 8px;
+      }
+
+      .chat {
+        padding: 24px;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 700;
+      }
+
+      textarea,
+      input {
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        padding: 14px 16px;
+        color: var(--text);
+        background: #fff;
+        font: inherit;
+        outline: none;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      }
+
+      textarea:focus,
+      input:focus {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+      }
+
+      textarea {
+        min-height: 132px;
+        resize: vertical;
+      }
+
+      .field {
+        margin-bottom: 16px;
+      }
+
+      .actions {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+
+      button {
+        border: 0;
+        border-radius: 999px;
+        padding: 13px 20px;
+        color: #fff;
+        background: var(--primary);
+        font: inherit;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      button:hover {
+        background: var(--primary-dark);
+      }
+
+      button:disabled {
+        cursor: wait;
+        opacity: 0.7;
+      }
+
+      .hint {
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .answer {
+        min-height: 140px;
+        margin-top: 20px;
+        padding: 18px;
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        background: #f9fafb;
+        white-space: pre-wrap;
+        line-height: 1.6;
+      }
+
+      .status {
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .status.ok {
+        color: var(--success);
+      }
+
+      .status.error {
+        color: var(--danger);
+      }
+
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+        margin-top: 24px;
+      }
+
+      .card {
+        padding: 20px;
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        background: rgba(255, 255, 255, 0.82);
+      }
+
+      .card h2 {
+        margin: 0 0 10px;
+        font-size: 1rem;
+      }
+
+      .card p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      @media (max-width: 900px) {
+        .hero,
+        .cards,
+        .flow {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <div class="panel intro">
+          <div class="eyebrow">RAG + n8n + OpenAI</div>
+          <h1>Soporte técnico sin fricción.</h1>
+          <p class="lead">
+            Interfaz liviana para probar el asistente MineCatalog. La consulta entra por n8n,
+            n8n recupera contexto en el backend FastAPI y genera una respuesta basada en la
+            documentación interna.
+          </p>
+          <div class="flow" aria-label="Flujo del sistema">
+            <div class="step"><strong>1. Usuario</strong>Escribe la pregunta de soporte.</div>
+            <div class="step"><strong>2. n8n</strong>Recibe el webhook y orquesta.</div>
+            <div class="step"><strong>3. Backend</strong>Busca contexto en los docs.</div>
+            <div class="step"><strong>4. OpenAI</strong>Responde con contexto o fallback.</div>
+          </div>
+        </div>
+
+        <form class="panel chat" id="support-form">
+          <div class="field">
+            <label for="webhook-url">Endpoint de consulta</label>
+            <input
+              id="webhook-url"
+              name="webhookUrl"
+              value="/ask"
+              autocomplete="off"
+            />
+          </div>
+          <div class="field">
+            <label for="question">Pregunta</label>
+            <textarea id="question" name="question" required>¿No se guardan los cambios de un material?</textarea>
+          </div>
+          <div class="actions">
+            <button id="submit" type="submit">Consultar asistente</button>
+            <span class="hint">`/ask` llama a n8n desde FastAPI y evita CORS.</span>
+          </div>
+          <div class="status" id="status">Listo para consultar.</div>
+          <div class="answer" id="answer">La respuesta aparecerá acá.</div>
+        </form>
+      </section>
+
+      <section class="cards" aria-label="Opciones de interfaz">
+        <article class="card">
+          <h2>Propuesta A: consola web</h2>
+          <p>La opción implementada: HTML estático, cero build, ideal para demo técnica rápida.</p>
+        </article>
+        <article class="card">
+          <h2>Propuesta B: widget embebible</h2>
+          <p>Un componente flotante para integrarlo en MineCatalog como soporte contextual.</p>
+        </article>
+        <article class="card">
+          <h2>Propuesta C: panel QA</h2>
+          <p>Vista interna con historial, score de contexto, trazas n8n y estados de error.</p>
+        </article>
+      </section>
+    </main>
+
+    <script>
+      const form = document.querySelector("#support-form");
+      const submitButton = document.querySelector("#submit");
+      const statusBox = document.querySelector("#status");
+      const answerBox = document.querySelector("#answer");
+
+      const setStatus = (message, type = "") => {
+        statusBox.className = `status ${type}`.trim();
+        statusBox.textContent = message;
+      };
+
+      const renderAnswer = (payload) => {
+        if (typeof payload === "string") {
+          return payload;
+        }
+
+        if (payload?.answer) {
+          return payload.answer;
+        }
+
+        if (payload?.text) {
+          return payload.text;
+        }
+
+        if (payload?.message?.content) {
+          return payload.message.content;
+        }
+
+        return JSON.stringify(payload, null, 2);
+      };
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+
+        const webhookUrl = form.webhookUrl.value.trim();
+        const question = form.question.value.trim();
+
+        if (!webhookUrl || !question) {
+          setStatus("Completá la URL del webhook y la pregunta.", "error");
+          return;
+        }
+
+        submitButton.disabled = true;
+        answerBox.textContent = "Consultando el asistente...";
+        setStatus("Enviando pregunta.", "");
+
+        try {
+          const isBackendProxy = webhookUrl.startsWith("/ask") || webhookUrl.includes(":8000/ask");
+          const response = isBackendProxy
+            ? await fetch(webhookUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ question }),
+              })
+            : await fetch(`${webhookUrl}${webhookUrl.includes("?") ? "&" : "?"}question=${encodeURIComponent(question)}`, {
+                method: "GET",
+              });
+          const contentType = response.headers.get("content-type") || "";
+          const payload = contentType.includes("application/json")
+            ? await response.json()
+            : await response.text();
+
+          if (!response.ok) {
+            throw new Error(renderAnswer(payload));
+          }
+
+          answerBox.textContent = renderAnswer(payload);
+          setStatus("Respuesta recibida correctamente.", "ok");
+        } catch (error) {
+          answerBox.textContent =
+            "No se pudo completar la consulta. Verificá que n8n esté activo, que el workflow esté en modo test/producción y que CORS permita la llamada desde el navegador.";
+          setStatus(error.message || "Error consultando el webhook.", "error");
+        } finally {
+          submitButton.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

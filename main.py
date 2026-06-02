@@ -4,14 +4,21 @@ Exposes endpoints for semantic search and LLM-based question answering.
 """
 
 import os
+import json
 import logging
+import asyncio
+from urllib import request as url_request
+from urllib import error as url_error
+from urllib.parse import urlencode
+from urllib.parse import parse_qs
 from typing import Optional
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field, ValidationError, model_validator
 from dotenv import load_dotenv
 
 from rag_pipeline import RAGPipeline
@@ -68,6 +75,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+if os.path.isdir("frontend"):
+    app.mount("/ui", StaticFiles(directory="frontend", html=True), name="frontend")
+
 
 # Request/Response Models
 class SearchRequest(BaseModel):
@@ -75,6 +85,14 @@ class SearchRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=500, description="Search query")
     top_k: Optional[int] = Field(3, ge=1, le=10, description="Number of results to return")
     threshold: Optional[float] = Field(0.5, ge=0.0, le=1.0, description="Similarity threshold")
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_n8n_question_alias(cls, data):
+        """Accept n8n payloads that send the user input as question."""
+        if isinstance(data, dict) and not data.get("query") and data.get("question"):
+            data = {**data, "query": data["question"]}
+        return data
 
 
 class SearchResult(BaseModel):
@@ -99,6 +117,43 @@ class ErrorResponse(BaseModel):
     details: Optional[str] = None
 
 
+class AskRequest(BaseModel):
+    """Request model for the n8n-backed assistant."""
+    question: str = Field(..., min_length=1, max_length=500, description="User support question")
+
+
+async def parse_search_request(request: Request) -> SearchRequest:
+    """Parse n8n/FastAPI payloads sent as JSON, form, urlencoded, or query params."""
+    body = await request.body()
+    payload = {}
+
+    if body:
+        body_text = body.decode("utf-8", errors="ignore").strip()
+        try:
+            parsed_json = json.loads(body_text)
+            if isinstance(parsed_json, dict):
+                payload = parsed_json
+        except json.JSONDecodeError:
+            parsed_form = parse_qs(body_text)
+            payload = {key: values[-1] for key, values in parsed_form.items() if values}
+
+    if not payload:
+        try:
+            form = await request.form()
+            payload = dict(form)
+        except Exception:
+            payload = {}
+
+    if not payload:
+        payload = dict(request.query_params)
+
+    try:
+        return SearchRequest.model_validate(payload)
+    except ValidationError as exc:
+        logger.warning("Invalid search payload from %s: %s", request.client, payload)
+        raise HTTPException(status_code=422, detail=exc.errors())
+
+
 @app.get("/health", response_model=dict)
 async def health_check():
     """Health check endpoint."""
@@ -110,10 +165,49 @@ async def health_check():
     }
 
 
-@app.post("/search", response_model=SearchResponse)
-async def search(request: SearchRequest) -> SearchResponse:
+@app.get("/", include_in_schema=False)
+async def root():
+    """Redirect humans to the lightweight support UI."""
+    return RedirectResponse(url="/ui")
+
+
+def call_n8n_webhook(question: str) -> dict:
+    """Call n8n from the backend to avoid browser CORS issues."""
+    webhook_url = os.getenv(
+        "N8N_WEBHOOK_URL",
+        "http://localhost:5678/webhook-test/minecatalog-support",
+    )
+    separator = "&" if "?" in webhook_url else "?"
+    url = f"{webhook_url}{separator}{urlencode({'question': question})}"
+
+    try:
+        with url_request.urlopen(url, timeout=30) as response:
+            response_body = response.read().decode("utf-8")
+            if response.headers.get_content_type() == "application/json":
+                return json.loads(response_body)
+            return {"success": True, "answer": response_body}
+    except url_error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="ignore")
+        raise HTTPException(
+            status_code=exc.code,
+            detail=f"n8n webhook failed: {detail or exc.reason}",
+        )
+    except url_error.URLError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"n8n webhook is not reachable: {exc.reason}",
+        )
+
+
+@app.post("/ask", response_model=dict)
+async def ask_assistant(request: AskRequest) -> dict:
+    """Proxy assistant questions to n8n server-side."""
+    return await asyncio.to_thread(call_n8n_webhook, request.question.strip())
+
+
+async def run_search(request: SearchRequest) -> SearchResponse:
     """
-    Semantic search endpoint.
+    Execute semantic search.
     
     Returns the most relevant document chunks for a given query.
     """
@@ -168,8 +262,21 @@ async def search(request: SearchRequest) -> SearchResponse:
         )
 
 
+@app.post("/search", response_model=SearchResponse)
+async def search(request: SearchRequest) -> SearchResponse:
+    """Semantic search endpoint for Swagger and JSON clients."""
+    return await run_search(request)
+
+
+@app.get("/search", response_model=SearchResponse)
+async def search_from_query(http_request: Request) -> SearchResponse:
+    """Semantic search endpoint optimized for n8n query-string calls."""
+    request = await parse_search_request(http_request)
+    return await run_search(request)
+
+
 @app.post("/context", response_model=dict)
-async def get_context(request: SearchRequest) -> dict:
+async def get_context(http_request: Request) -> dict:
     """
     Get contextual information for LLM prompt injection.
     
@@ -180,6 +287,8 @@ async def get_context(request: SearchRequest) -> dict:
             status_code=503,
             detail="RAG pipeline not initialized"
         )
+
+    request = await parse_search_request(http_request)
     
     try:
         results = rag_pipeline.search(
