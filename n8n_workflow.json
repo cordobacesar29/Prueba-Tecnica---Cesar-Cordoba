@@ -1,5 +1,5 @@
 {
-  "name": "MineCatalog RAG Support Assistant",
+  "name": "MineCatalog RAG Support Assistant - Con Contingencia",
   "nodes": [
     {
       "parameters": {
@@ -94,12 +94,13 @@
           "id": "2xhCS319YXYTGsiu",
           "name": "OpenAI account"
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ { success: true, question: $node[\"Webhook\"].json.query?.question || $node[\"Webhook\"].json.body?.question || $node[\"Webhook\"].json.question || \"\", answer: $json.message?.content || $json.text || $json.response || $json, source: \"n8n\", backendUrl: \"http://127.0.0.1:8000/search\", timestamp: new Date().toISOString() } }}",
+        "responseBody": "={{ \n  {\n    success: $json.error ? false : true,\n    question: $node[\"Webhook\"].json.query?.question || $node[\"Webhook\"].json.body?.question || $node[\"Webhook\"].json.question || \"\", \n    answer: $json.error ? \"En este momento nuestro asistente de IA no se encuentra disponible por mantenimiento o límite de cuota. Por favor, contacte directamente a soporte técnico en soporte.minecatalog@empresa.com.\" : ($json.message?.content || $json.text || $json.response || $json),\n    source: \"n8n\", \n    backendUrl: \"http://127.0.0.1:8000/search\", \n    timestamp: new Date().toISOString(),\n    status: $json.error ? \"fallback_offline\" : \"success\"\n  } \n}}",
         "options": {}
       },
       "id": "4d70b437-aef2-4870-9806-56979fb982e8",
