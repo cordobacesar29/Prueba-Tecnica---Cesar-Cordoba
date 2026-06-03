@@ -42,12 +42,13 @@ async def lifespan(app: FastAPI):
     """Manage application startup and shutdown."""
     global rag_pipeline
     
-    # Startup
+    # Startup: Inicializa el pipeline RAG cuando la app inicia
     logger.info("Starting MineCatalog RAG API...")
     docs_dir = os.getenv("DOCS_DIR_PATH", "./docs")
     chunk_size = int(os.getenv("CHUNK_SIZE", 500))
     chunk_overlap = int(os.getenv("CHUNK_OVERLAP", 50))
     
+    # Crea instancia del pipeline con parámetros del archivo .env
     rag_pipeline = RAGPipeline(docs_dir, chunk_size, chunk_overlap)
     
     if not rag_pipeline.initialize():
@@ -55,7 +56,7 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    # Shutdown
+    # Shutdown: Limpia recursos cuando la app se detiene
     logger.info("Shutting down MineCatalog RAG API...")
 
 
@@ -90,6 +91,7 @@ class SearchRequest(BaseModel):
     @classmethod
     def accept_n8n_question_alias(cls, data):
         """Accept n8n payloads that send the user input as question."""
+        # n8n a veces envía "question" en lugar de "query", este validador lo mapea
         if isinstance(data, dict) and not data.get("query") and data.get("question"):
             data = {**data, "query": data["question"]}
         return data
@@ -127,6 +129,7 @@ async def parse_search_request(request: Request) -> SearchRequest:
     body = await request.body()
     payload = {}
 
+    # Intenta parsear como JSON primero
     if body:
         body_text = body.decode("utf-8", errors="ignore").strip()
         try:
@@ -134,9 +137,11 @@ async def parse_search_request(request: Request) -> SearchRequest:
             if isinstance(parsed_json, dict):
                 payload = parsed_json
         except json.JSONDecodeError:
+            # Fallback: parsea como URL-encoded form
             parsed_form = parse_qs(body_text)
             payload = {key: values[-1] for key, values in parsed_form.items() if values}
 
+    # Si no hay body, intenta parsear form-data
     if not payload:
         try:
             form = await request.form()
@@ -144,6 +149,7 @@ async def parse_search_request(request: Request) -> SearchRequest:
         except Exception:
             payload = {}
 
+    # Si nada de lo anterior, usa query parameters
     if not payload:
         payload = dict(request.query_params)
 
@@ -177,12 +183,15 @@ def call_n8n_webhook(question: str) -> dict:
         "N8N_WEBHOOK_URL",
         "http://localhost:5678/webhook-test/minecatalog-support",
     )
+    # Construye la URL con query parameter para la pregunta
     separator = "&" if "?" in webhook_url else "?"
     url = f"{webhook_url}{separator}{urlencode({'question': question})}"
 
     try:
+        # Realiza HTTP request al webhook de n8n
         with url_request.urlopen(url, timeout=30) as response:
             response_body = response.read().decode("utf-8")
+            # Intenta parsear como JSON si es disponible
             if response.headers.get_content_type() == "application/json":
                 return json.loads(response_body)
             return {"success": True, "answer": response_body}
@@ -193,6 +202,7 @@ def call_n8n_webhook(question: str) -> dict:
             detail=f"n8n webhook failed: {detail or exc.reason}",
         )
     except url_error.URLError as exc:
+        # Si n8n no está disponible
         raise HTTPException(
             status_code=502,
             detail=f"n8n webhook is not reachable: {exc.reason}",
@@ -211,12 +221,14 @@ async def run_search(request: SearchRequest) -> SearchResponse:
     
     Returns the most relevant document chunks for a given query.
     """
+    # Verifica que el pipeline RAG esté inicializado
     if rag_pipeline is None:
         raise HTTPException(
             status_code=503,
             detail="RAG pipeline not initialized"
         )
     
+    # Valida que la query no esté vacía
     if not request.query or not request.query.strip():
         raise HTTPException(
             status_code=400,
@@ -226,6 +238,7 @@ async def run_search(request: SearchRequest) -> SearchResponse:
     try:
         logger.info(f"Searching for: {request.query}")
         
+        # Ejecuta búsqueda semántica en el pipeline RAG
         results = rag_pipeline.search(
             query=request.query.strip(),
             k=request.top_k,
@@ -238,6 +251,7 @@ async def run_search(request: SearchRequest) -> SearchResponse:
                 detail=results["error"]
             )
         
+        # Formatea resultados con estructura de respuesta
         formatted_results = [
             SearchResult(
                 rank=result["rank"],
@@ -291,6 +305,7 @@ async def get_context(http_request: Request) -> dict:
     request = await parse_search_request(http_request)
     
     try:
+        # Realiza búsqueda semántica
         results = rag_pipeline.search(
             query=request.query.strip(),
             k=request.top_k,
@@ -304,7 +319,7 @@ async def get_context(http_request: Request) -> dict:
                 "context": ""
             }
         
-        # Format context for LLM
+        # Formatea los resultados como texto para inyección en prompts de LLM
         if not results:
             context_text = "No relevant information found in the documentation."
         else:
