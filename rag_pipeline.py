@@ -35,9 +35,11 @@ class DocumentProcessor:
         
         all_docs = []
         
+        # Itera sobre todos los archivos recursivamente en la carpeta
         for file_path in docs_path.glob("**/*"):
             if file_path.is_file():
                 try:
+                    # Detecta el formato del archivo y lo carga accordingly
                     if file_path.suffix.lower() == ".pdf":
                         docs = self._load_pdf(file_path)
                     elif file_path.suffix.lower() == ".txt":
@@ -181,11 +183,11 @@ class DocumentProcessor:
     
     def _clean_text(self, text: str) -> str:
         """Normalize and clean text."""
-        # Remove extra whitespace
+        # Reemplaza múltiples espacios por uno
         text = re.sub(r'\s+', ' ', text)
-        # Remove control characters
+        # Elimina caracteres de control
         text = ''.join(char for char in text if ord(char) >= 32 or char == '\n')
-        # Remove URLs if any
+        # Elimina URLs
         text = re.sub(r'http\S+|www\S+', '', text)
         return text.strip()
     
@@ -200,9 +202,10 @@ class DocumentProcessor:
         for word in words:
             word_size = len(word) + 1
             
+            # Si al agregar esta palabra se supera el límite, guarda el chunk
             if current_size + word_size > self.chunk_size and current_chunk:
                 chunks.append(" ".join(current_chunk))
-                # Keep overlap
+                # Mantiene un solapamiento (overlap) de palabras para continuidad semántica
                 overlap_words = int(len(current_chunk) * self.chunk_overlap / self.chunk_size)
                 current_chunk = current_chunk[-overlap_words:] if overlap_words > 0 else []
                 current_size = sum(len(w) + 1 for w in current_chunk)
@@ -210,6 +213,7 @@ class DocumentProcessor:
             current_chunk.append(word)
             current_size += word_size
         
+        # Agrega el último chunk
         if current_chunk:
             chunks.append(" ".join(current_chunk))
         
@@ -239,9 +243,11 @@ class EmbeddingManager:
         self.documents = documents
         embeddings = {}
         
+        # Usa OpenAI si está disponible, sino usa fallback
         if self.use_openai:
             embeddings = self._generate_openai_embeddings(documents)
         else:
+            # Método alternativo basado en TF (Term Frequency)
             embeddings = self._generate_fallback_embeddings(documents)
         
         self.embeddings = embeddings
@@ -252,11 +258,13 @@ class EmbeddingManager:
         embeddings = {}
         batch_size = 100
         
+        # Procesa en lotes para no sobrecargar la API
         for i in range(0, len(documents), batch_size):
             batch = documents[i:i + batch_size]
             texts = [doc["content"] for doc in batch]
             
             try:
+                # Llama a OpenAI para generar embeddings (vectores numéricos)
                 response = self.client.embeddings.create(
                     input=texts,
                     model=self.model
@@ -266,7 +274,7 @@ class EmbeddingManager:
                     embeddings[i + j] = np.array(embedding_obj.embedding)
             except Exception as e:
                 logger.error(f"Error generating embeddings: {str(e)}")
-                # Fallback to simple embeddings
+                # Si falla OpenAI, usa embeddings simples
                 for j, doc in enumerate(batch):
                     embeddings[i + j] = self._simple_embedding(doc["content"])
         
@@ -276,25 +284,27 @@ class EmbeddingManager:
         """Generate simple embeddings (TF-IDF-like) for documents."""
         embeddings = {}
         
-        # Build vocabulary
+        # Construye vocabulario de todas las palabras
         vocabulary = set()
         for doc in documents:
             words = doc["content"].lower().split()
             vocabulary.update(words)
         
+        # Crea un índice: palabra -> posición en vector
         vocab_list = sorted(list(vocabulary))
         self.vocab_index = {word: idx for idx, word in enumerate(vocab_list)}
         
-        # Generate TF vectors
+        # Genera vector TF (Term Frequency) para cada documento
         for idx, doc in enumerate(documents):
             vector = np.zeros(len(vocab_list))
             words = doc["content"].lower().split()
             
+            # Cuenta cuántas veces aparece cada palabra
             for word in words:
                 if word in self.vocab_index:
                     vector[self.vocab_index[word]] += 1
             
-            # Normalize
+            # Normaliza el vector (L2 normalization) para comparación
             norm = np.linalg.norm(vector)
             if norm > 0:
                 vector = vector / norm
@@ -350,7 +360,7 @@ class EmbeddingManager:
         if not self.embeddings:
             return []
         
-        # Generate embedding for query
+        # Genera embedding para la pregunta del usuario
         if self.use_openai:
             try:
                 query_response = self.client.embeddings.create(
@@ -360,18 +370,20 @@ class EmbeddingManager:
                 query_embedding = np.array(query_response.data[0].embedding)
             except Exception as e:
                 logger.error(f"Error generating query embedding: {str(e)}")
+                # Fallback a embedding simple
                 query_embedding = self._simple_embedding(query)
         else:
             query_embedding = self._fallback_query_embedding(query)
         
-        # Calculate similarities
+        # Calcula similaridad coseno entre query y cada documento
         similarities = []
         for idx, doc_embedding in self.embeddings.items():
             similarity = self.cosine_similarity(query_embedding, doc_embedding)
+            # Solo mantiene resultados por encima del threshold
             if similarity >= threshold:
                 similarities.append((idx, similarity))
         
-        # Sort by similarity (descending) and return top k
+        # Ordena por similaridad (descendente) y retorna top k
         similarities.sort(key=lambda x: x[1], reverse=True)
         results = []
         
@@ -395,12 +407,14 @@ class RAGPipeline:
         """Load and process all documents."""
         logger.info("Initializing RAG pipeline...")
         
+        # Carga documentos de todas las carpetas
         documents = self.processor.load_documents(self.docs_dir)
         if not documents:
             logger.error("No documents loaded")
             return False
         
         logger.info(f"Loaded {len(documents)} document chunks")
+        # Genera embeddings para búsqueda semántica
         self.embedding_manager.generate_embeddings(documents)
         self.is_initialized = True
         logger.info("RAG pipeline initialized successfully")
@@ -412,8 +426,10 @@ class RAGPipeline:
         if not self.is_initialized:
             return {"error": "RAG pipeline not initialized"}
         
+        # Realiza búsqueda en el embedding manager
         results = self.embedding_manager.search(query, k=k, threshold=threshold)
         
+        # Formatea los resultados para retornar al cliente
         return [
             {
                 "content": content,
